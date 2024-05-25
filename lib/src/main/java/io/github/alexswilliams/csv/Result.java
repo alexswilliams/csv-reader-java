@@ -1,6 +1,17 @@
 package io.github.alexswilliams.csv;
 
-public interface Result<T> {
+
+interface Result<T> {
+    default OK<T> ok() {
+        if (this instanceof OK) return (OK<T>) this;
+        throw new ClassCastException("Result was an Error");
+    }
+
+    default Error<T> error() {
+        if (this instanceof Error) return (Error<T>) this;
+        throw new ClassCastException("Result was an Error");
+    }
+
     final class OK<T> implements Result<T> {
         T data;
 

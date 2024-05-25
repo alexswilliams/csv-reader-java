@@ -68,19 +68,18 @@ public class CsvReader extends BufferedReader {
         try {
             return items.peek(it -> {
                         if (it instanceof Result.Error) {
-                            Result.Error<List<String>> error = (Result.Error<List<String>>) it;
                             if (skipBadLines) {
                                 LOGGER.warn("Skipping line {} due to parsing error: {}",
-                                        error.line, error.exception.getMessage());
+                                        it.error().line, it.error().exception.getMessage());
                             } else {
                                 LOGGER.warn("Stopping at line {} due to parsing error: {}",
-                                        error.line, error.exception.getMessage());
-                                throw new CheckedLaterException(error.exception);
+                                        it.error().line, it.error().exception.getMessage());
+                                throw new CheckedLaterException(it.error().exception);
                             }
                         }
                     })
                     .filter(it -> it instanceof Result.OK)
-                    .map(it -> ((Result.OK<List<String>>) it).data);
+                    .map(it -> it.ok().data);
 
         } catch (CheckedLaterException e) {
             if (e.getCause() instanceof CsvException) {
