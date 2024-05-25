@@ -25,7 +25,7 @@ public class CsvReaderUnitTest {
     }
 
     @Test
-    public void testReadFile() throws IOException, CsvReader.CsvException {
+    public void testReadFile() throws IOException, CsvException {
         final StringBuilder stringBuilder = initStrings();
 
         try (final CsvReader csvReader = new CsvReader(new StringReader(stringBuilder.toString()))) {
@@ -80,7 +80,7 @@ public class CsvReaderUnitTest {
     }
 
     @Test
-    public void testParseLine() throws IOException, CsvReader.CsvException {
+    public void testParseLine() throws IOException, CsvException {
         final StringBuilder stringBuilder = initStrings();
 
         try (final CsvReader csvReader = new CsvReader(new StringReader(stringBuilder.toString()))) {

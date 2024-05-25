@@ -9,67 +9,92 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Reader;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * Conforms to <a href="https://tools.ietf.org/html/rfc4180">...</a>
- * Transforms a CSV file into a list of rows, each being a list of field values.
+ * Transforms a CSV file into a sequence of rows, each being a list of field values.
  * No distinction is made between header and record rows.
  *
  * @author Alex Williams
  * @since 25-Nov-2016
  */
 public class CsvReader extends BufferedReader {
-    @NotNull
     private static final Pattern QUOTE_MATCHER = Pattern.compile("\\A\"(.*)\"\\z");
-    @NotNull
-    private static final Logger logger = LoggerFactory.getLogger(CsvReader.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(CsvReader.class);
+
+    private final AtomicInteger lineNum = new AtomicInteger(1);
 
     public CsvReader(@NotNull final Reader reader) {
         super(reader);
     }
 
-    public static class CsvException extends Exception {
-        CsvException(final String s) {
-            super(s);
-        }
-    }
-
-
-    private int lineNum = 1;
 
     @NotNull
     public List<List<String>> readFile(final boolean skipBadLines) throws IOException, CsvException {
-        final List<List<String>> fullFile = new LinkedList<>();
+        return Collections.unmodifiableList(
+                streamFile(skipBadLines).collect(Collectors.toList()));
+    }
 
-        List<String> thisLine = null;
-        do {
+    class CsvReaderSpliterator extends AbstractCsvReaderSpliterator {
+        @Override
+        public boolean tryAdvance(Consumer<? super Result<List<String>>> action) {
             try {
-                thisLine = this.parseLine();
-            } catch (CsvException e) {
-                if (skipBadLines) {
-                    logger.warn("Skipping line {} due to parsing error: {}", lineNum, e.getMessage());
-                    continue;
-                } else {
-                    logger.warn("Stopping at line {} due to parsing error: {}", lineNum, e.getMessage());
-                    throw e;
+                @Nullable List<String> line = parseLine();
+                if (line != null) {
+                    action.accept(new Result.OK<>(line));
+                    return true;
                 }
+                return false;
+            } catch (IOException e) {
+                throw new CheckedLaterException(e);
+            } catch (CsvException e) {
+                action.accept(new Result.Error<>(e, lineNum.get()));
+                return true;
             }
-            if (thisLine != null) {
-                fullFile.add(thisLine);
-            }
-        } while (thisLine != null);
+        }
+    }
 
-        return Collections.unmodifiableList(new ArrayList<>(fullFile));
+    @NotNull
+    public Stream<List<String>> streamFile(final boolean skipBadLines) throws IOException, CsvException {
+        final Stream<Result<List<String>>> items = StreamSupport.stream(new CsvReaderSpliterator(), false);
+
+        try {
+            return items.peek(it -> {
+                        if (it instanceof Result.Error) {
+                            Result.Error<List<String>> error = (Result.Error<List<String>>) it;
+                            if (skipBadLines) {
+                                LOGGER.warn("Skipping line {} due to parsing error: {}",
+                                        error.line, error.exception.getMessage());
+                            } else {
+                                LOGGER.warn("Stopping at line {} due to parsing error: {}",
+                                        error.line, error.exception.getMessage());
+                                throw new CheckedLaterException(error.exception);
+                            }
+                        }
+                    })
+                    .filter(it -> it instanceof Result.OK)
+                    .map(it -> ((Result.OK<List<String>>) it).data);
+
+        } catch (CheckedLaterException e) {
+            if (e.getCause() instanceof CsvException) {
+                throw (CsvException) e.getCause();
+            }
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) e.getCause();
+            }
+            throw new RuntimeException(e.getCause());
+        }
     }
 
     @Nullable
     List<String> parseLine() throws IOException, CsvException {
-
         final List<String> result = new LinkedList<>();
         CsvStates stateMachine = CsvStates.START_OF_FIELD;
 
@@ -94,9 +119,9 @@ public class CsvReader extends BufferedReader {
             switch (stateMachine) {
                 case START_OF_FIELD:
                     if ((nextRead == -1) || (nextChar == '\n')) {
-                        lineNum++;
+                        lineNum.getAndIncrement();
                         result.add(thisField.toString());
-                        return startOfLine ? Collections.emptyList() : Collections.unmodifiableList(result);
+                        return startOfLine ? Collections.emptyList() : Collections.unmodifiableList(new ArrayList<>(result));
                     }
                     startOfLine = false;
 
@@ -113,7 +138,7 @@ public class CsvReader extends BufferedReader {
 
                 case LEXING_UNQUOTED_FIELD:
                     if ((nextRead == -1) || (nextChar == '\n')) {
-                        lineNum++;
+                        lineNum.getAndIncrement();
                         result.add(StringEscapeUtils.unescapeCsv(thisField.toString()));
                         return Collections.unmodifiableList(result);
                     }
@@ -123,7 +148,7 @@ public class CsvReader extends BufferedReader {
                         thisField.setLength(0);
                         fieldNum++;
                     } else if (nextChar == '\"') {
-                        logger.error("CSV (Line {}, Field {}): Unescaped quotation mark or leading characters "
+                        LOGGER.error("CSV (Line {}, Field {}): Unescaped quotation mark or leading characters "
                                 + "before quoted field.\n", lineNum, fieldNum);
                         throw new CsvException("[ERROR] CSV (Line " + lineNum + ", Field " + fieldNum
                                 + "): Unescaped quotation mark or leading character "
@@ -135,14 +160,14 @@ public class CsvReader extends BufferedReader {
 
                 case LEXING_QUOTED_FIELD:
                     if (nextRead == -1) {
-                        logger.error("CSV (Line {}, Field {}): Unterminated quoted field.",
+                        LOGGER.error("CSV (Line {}, Field {}): Unterminated quoted field.",
                                 lineNum, fieldNum);
                         throw new CsvException("[ERROR] CSV (Line " + lineNum + ", Field " + fieldNum
                                 + "): Unterminated quoted field.");
                     }
                     if (nextChar == '\n') {
-                        lineNum++;
-                        logger.info("CSV (Line {}, Field {}): Quoted field contains newline - was this "
+                        lineNum.getAndIncrement();
+                        LOGGER.info("CSV (Line {}, Field {}): Quoted field contains newline - was this "
                                 + "intentional?", lineNum, fieldNum);
 
                     } else if (nextChar == '\"') {
@@ -155,7 +180,7 @@ public class CsvReader extends BufferedReader {
 
                 case ENDING_QUOTED_FIELD:
                     if ((nextRead == -1) || (nextChar == '\n')) {
-                        lineNum++;
+                        lineNum.getAndIncrement();
                         result.add(stripEnclosingQuotes(StringEscapeUtils.unescapeCsv(thisField.toString())));
                         return Collections.unmodifiableList(result);
                     }
@@ -168,7 +193,7 @@ public class CsvReader extends BufferedReader {
                         thisField.append('\"');
                         stateMachine = CsvStates.LEXING_QUOTED_FIELD;
                     } else {
-                        logger.error("CSV (Line {}, Field {}): Unescaped quotation mark or trailing character "
+                        LOGGER.error("CSV (Line {}, Field {}): Unescaped quotation mark or trailing character "
                                 + "after quoted field.", lineNum, fieldNum);
                         throw new CsvException("[ERROR] CSV (Line " + lineNum + ", Field " + fieldNum
                                 + "): Unescaped quotation mark or trailing character "
