@@ -1,5 +1,3 @@
-@file:Suppress("UnstableApiUsage")
-
 plugins {
     `java-library`
 }
@@ -12,12 +10,15 @@ dependencies {
     implementation(libs.apache.commons.text)
     implementation(libs.slf4j.api)
     implementation(libs.jetbrains.annotations)
+
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.logback.classic)
 }
 
 testing {
     suites {
         val test by getting(JvmTestSuite::class) {
-            useTestNG("7.5.1")
+            useJUnitJupiter(libs.versions.junit.jupiter)
         }
     }
 }

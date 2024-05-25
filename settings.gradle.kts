@@ -1,5 +1,3 @@
-@file:Suppress("UnstableApiUsage")
-
 import de.fayard.refreshVersions.core.FeatureFlag.*
 import de.fayard.refreshVersions.core.StabilityLevel
 
@@ -13,8 +11,9 @@ include("lib")
 
 refreshVersions {
     rejectVersionIf {
-        this.
-        candidate.stabilityLevel != StabilityLevel.Stable
+        candidate.stabilityLevel != StabilityLevel.Stable ||
+                // Logback classic only support java 8 up to 1.3.x
+                this.moduleId.name == "logback-classic" && this.candidate.value.split('.')[1].toInt() > 3
     }
     featureFlags {
         enable(VERSIONS_CATALOG)
