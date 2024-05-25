@@ -1,10 +1,10 @@
-package com.github.alexswilliams.csvreaderjava;
+package io.github.alexswilliams.csv;
 
 import org.apache.commons.text.StringEscapeUtils;
+import org.jetbrains.annotations.NotNull;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
-import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.Collection;
@@ -14,7 +14,7 @@ import java.util.Objects;
 
 /**
  * @author Alex Williams
- * @date 25-Nov-2016
+ * @since 25-Nov-2016
  */
 public class CsvReaderUnitTest {
 
@@ -43,7 +43,7 @@ public class CsvReaderUnitTest {
         }
     }
 
-    @Nonnull
+    @NotNull
     private static StringBuilder initStrings() {
         final StringBuilder stringBuilder = new StringBuilder();
         stringBuilder.append("1,2,3,4,5\n");
@@ -53,8 +53,8 @@ public class CsvReaderUnitTest {
         stringBuilder.append("aꜬbꜢd\uD801\uDF22e∛f\n");
         stringBuilder.append("hanging,\n");
         stringBuilder.append("#\n");
-        stringBuilder.append("# comment line, with \" many # odd ,\"\'\"\" characters in.\n");
-        stringBuilder.append("# comment line, with \" many # odd ,\"\'\"\" characters in.\n");
+        stringBuilder.append("# comment line, with \" many # odd ,\"'\"\" characters in.\n");
+        stringBuilder.append("# comment line, with \" many # odd ,\"'\"\" characters in.\n");
         stringBuilder.append(",leading\n");
         stringBuilder.append(" has spaces , everywhere \n");
         stringBuilder.append(StringEscapeUtils.escapeCsv("tricky'input")).append(",quotes\n");
@@ -64,8 +64,8 @@ public class CsvReaderUnitTest {
         stringBuilder.append(StringEscapeUtils.escapeCsv("tricky\",\"input")).append(",quotes\n");
         stringBuilder.append(StringEscapeUtils.escapeCsv("\"aꜬbꜢd\uD801\uDF22e∛f\""))
                 .append(",quotes\n");
-        stringBuilder.append("# comment line, with \" many # odd ,\"\'\"\" characters in.\n");
-        stringBuilder.append("# comment line, with \" many # odd ,\"\'\"\" characters in.\n");
+        stringBuilder.append("# comment line, with \" many # odd ,\"'\"\" characters in.\n");
+        stringBuilder.append("# comment line, with \" many # odd ,\"'\"\" characters in.\n");
         stringBuilder.append("\"\"\"\"\n");
         stringBuilder.append(StringEscapeUtils.escapeCsv("bob \"wonderful\" smith")).append('\n');
         stringBuilder.append("0,0,N,").append(

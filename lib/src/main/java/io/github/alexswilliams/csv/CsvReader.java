@@ -1,17 +1,11 @@
-package com.github.alexswilliams.csvreaderjava;
-
-/*
- * Depends on:
- *  - org.apache.commons:commons-text
- *  - org.slf4j:slf4j-api
- */
+package io.github.alexswilliams.csv;
 
 import org.apache.commons.text.StringEscapeUtils;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Reader;
@@ -22,24 +16,24 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Conforms to https://tools.ietf.org/html/rfc4180
+ * Conforms to <a href="https://tools.ietf.org/html/rfc4180">...</a>
  * Transforms a CSV file into a list of rows, each being a list of field values.
  * No distinction is made between header and record rows.
  *
  * @author Alex Williams
- * @date 25-Nov-2016
+ * @since 25-Nov-2016
  */
 public class CsvReader extends BufferedReader {
-    @Nonnull
+    @NotNull
     private static final Pattern QUOTE_MATCHER = Pattern.compile("\\A\"(.*)\"\\z");
-    @Nonnull
+    @NotNull
     private static final Logger logger = LoggerFactory.getLogger(CsvReader.class);
 
-    public CsvReader(@Nonnull final Reader reader) {
+    public CsvReader(@NotNull final Reader reader) {
         super(reader);
     }
 
-    static class CsvException extends Exception {
+    public static class CsvException extends Exception {
         CsvException(final String s) {
             super(s);
         }
@@ -48,7 +42,7 @@ public class CsvReader extends BufferedReader {
 
     private int lineNum = 1;
 
-    @Nonnull
+    @NotNull
     public List<List<String>> readFile(final boolean skipBadLines) throws IOException, CsvException {
         final List<List<String>> fullFile = new LinkedList<>();
 
@@ -185,7 +179,7 @@ public class CsvReader extends BufferedReader {
         } while (true);
     }
 
-    static String stripEnclosingQuotes(@Nonnull final CharSequence quotedString) {
+    static String stripEnclosingQuotes(@NotNull final CharSequence quotedString) {
         return QUOTE_MATCHER.matcher(quotedString).replaceAll("$1");
     }
 
