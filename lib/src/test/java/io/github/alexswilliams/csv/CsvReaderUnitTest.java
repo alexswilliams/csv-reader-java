@@ -3,14 +3,16 @@ package io.github.alexswilliams.csv;
 import org.apache.commons.text.StringEscapeUtils;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 
 import java.io.IOException;
 import java.io.StringReader;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
+import java.util.stream.Stream;
+
+import static java.util.Arrays.asList;
 
 /**
  * @author Alex Williams
@@ -18,10 +20,122 @@ import java.util.Objects;
  */
 public class CsvReaderUnitTest {
 
-    @Test
-    public void testStringUnQuoter() {
-        Assertions.assertEquals(CsvReader.stripEnclosingQuotes("\"XXX_PO\""), "XXX_PO",
-                "Couldn't unquote string correctly.");
+    private static class Assertion {
+        String displayName;
+        String input;
+        List<List<String>> expectedOutput;
+
+        Assertion(String displayName, String input, List<List<String>> expectedOutput) {
+            this.displayName = displayName;
+            this.input = input;
+            this.expectedOutput = expectedOutput;
+        }
+    }
+
+    @SafeVarargs
+    private final <T> List<T> list(T... elements) {
+        return asList(elements);
+    }
+
+    @TestFactory
+    public Stream<DynamicTest> regressions() {
+        return Stream.of(
+                new Assertion("A name can have a quoted substring", "\"bob \"\"wonderful\"\" smith\"", list(list("bob \"wonderful\" smith"))),
+                new Assertion("A mix of quotes and commas", "0,0,N,\"\"\"AAAAAAAAAA\"\": BB BB BB 'ABCDEFG QWEIR', 1234-5678\"\n",
+                        list(list("0", "0", "N", "\"AAAAAAAAAA\": BB BB BB 'ABCDEFG QWEIR', 1234-5678"))),
+                new Assertion("Long input", "333333333,xxxxx,xxxxx@yyy,AAAA,XXXXX,XXX,false,false,false,X,W,XXX,N,aaaaaaaaa,11-XXX-XX,11-XXX-XX,1,1,XXX,1,11/11/1111,11/11/1111,11/11/1111,11/11/1111,0,0,N,\"\"\"NNNNNNNNNNNN AMBNDJ\"\": AMAMAMMAMAMA 'QPQPQPQPQP', 1234-5678\"\n",
+                        list(list("333333333", "xxxxx", "xxxxx@yyy", "AAAA", "XXXXX", "XXX", "false", "false", "false", "X", "W", "XXX", "N", "aaaaaaaaa", "11-XXX-XX", "11-XXX-XX", "1", "1", "XXX", "1", "11/11/1111", "11/11/1111", "11/11/1111", "11/11/1111", "0", "0", "N", "\"NNNNNNNNNNNN AMBNDJ\": AMAMAMMAMAMA 'QPQPQPQPQP', 1234-5678")))
+
+
+        ).map(it -> DynamicTest.dynamicTest(it.displayName, () -> {
+            final List<List<String>> output;
+            try (StringReader stringReader = new StringReader(it.input); CsvReader csvReader = new CsvReader(stringReader)) {
+                output = csvReader.readFile(false);
+            }
+            Assertions.assertIterableEquals(it.expectedOutput, output);
+        }));
+    }
+
+    @TestFactory
+    public Stream<DynamicTest> scenarios() {
+        return Stream.of(
+                // Single-line Base cases
+                new Assertion("Empty string returns []", "", list()),
+                new Assertion("Single value returned as-is", "Cell 1", list(list("Cell 1"))),
+                new Assertion("Multiple values returned as-is", "Cell 1,Cell 2", list(list("Cell 1", "Cell 2"))),
+
+                // UTF-8
+                new Assertion("UTF-8 value is returned as-is", "Юнікод", list(list("Юнікод"))),
+                new Assertion("UTF-8 runes containing 0x2c (comma) do not need quoting", "x\u042cx", list(list("xЬx"))),
+                new Assertion("UTF-8 runes containing 0x22 (\") do not need quoting", "x\u0422x", list(list("xТx"))),
+                new Assertion("UTF-8 runes containing 0x0a (\\n) do not need quoting", "x\u040ax", list(list("xЊx"))),
+                new Assertion("UTF-8 runes containing 0x0d (\\r) do not need quoting", "x\u040dx", list(list("xЍx"))),
+                new Assertion("UTF-8 rounded quotation marks (“”) do not act as 0x22", "“Cell 1,Cell 2”", list(list("“Cell 1", "Cell 2”"))),
+
+                // Spaces
+                new Assertion("No space trimming is applied after comma", "Cell 1, Cell 2", list(list("Cell 1", " Cell 2"))),
+                new Assertion("No space trimming is applied before comma", "Cell 1 ,Cell 2", list(list("Cell 1 ", "Cell 2"))),
+                new Assertion("No space trimming is applied at start", " Cell 1,Cell 2", list(list(" Cell 1", "Cell 2"))),
+                new Assertion("No space trimming is applied at end", "Cell 1,Cell 2 ", list(list("Cell 1", "Cell 2 "))),
+
+                // Blank cells
+                new Assertion("Empty cell at start is included in line", ",Cell 2", list(list("", "Cell 2"))),
+                new Assertion("Empty cell at end is included in line", "Cell 1,", list(list("Cell 1", ""))),
+                new Assertion("Empty cell in middle is included in line", "Cell 1,,Cell 3", list(list("Cell 1", "", "Cell 3"))),
+
+                // Blank lines
+                new Assertion("Just '\\n' returns [[]]", "\n", list(list())),
+                new Assertion("Just '\\r\\n' returns [[]]", "\r\n", list(list())),
+                new Assertion("Blank trailing line is omitted (LF)", "Cell 1\n", list(list("Cell 1"))),
+                new Assertion("Blank trailing line is omitted (CRLF)", "Cell 1\r\n", list(list("Cell 1"))),
+                new Assertion("Blank leading line is included (LF)", "\nCell 1", list(list(), list("Cell 1"))),
+                new Assertion("Blank leading line is included (CRLF)", "\r\nCell 1", list(list(), list("Cell 1"))),
+                new Assertion("Blank middle line is an empty list (LF)", "Cell 1\n\nCell 2", list(list("Cell 1"), list(), list("Cell 2"))),
+                new Assertion("Blank middle line is an empty list (CRLF)", "Cell 1\r\n\r\nCell 2", list(list("Cell 1"), list(), list("Cell 2"))),
+
+                // Simple Quoting
+                new Assertion("Quoted values are unquoted (single)", "\"Cell 1\"", list(list("Cell 1"))),
+                new Assertion("Quoted values are unquoted (multiple)", "\"Cell 1\",\"Cell 2\"", list(list("Cell 1", "Cell 2"))),
+                new Assertion("Quoted values are unquoted (mixed 1)", "\"Cell 1\",Cell 2", list(list("Cell 1", "Cell 2"))),
+                new Assertion("Quoted values are unquoted (mixed 2)", "Cell 1,\"Cell 2\"", list(list("Cell 1", "Cell 2"))),
+
+                // Single-line Comma Quoting
+                new Assertion("Values with commas are de-quoted (Alone)", "\"Cell 1A,1B\"", list(list("Cell 1A,1B"))),
+                new Assertion("Values with commas are de-quoted (Leading)", "\"Cell 1A,1B\",Cell 2", list(list("Cell 1A,1B", "Cell 2"))),
+                new Assertion("Values with commas are de-quoted (Trailing)", "Cell 0,\"Cell 1A,1B\"", list(list("Cell 0", "Cell 1A,1B"))),
+                new Assertion("Values with commas are de-quoted (Mixes)", "Cell 0,\"Cell 1A,1B\",Cell 2", list(list("Cell 0", "Cell 1A,1B", "Cell 2"))),
+                new Assertion("Values starting with commas are de-quoted", "\",Cell\"", list(list(",Cell"))),
+                new Assertion("Values ending with commas are de-quoted", "\"Cell,\"", list(list("Cell,"))),
+
+                // Single-line " Escaping
+                new Assertion("Quoted values escaping quotes are unescaped", "\"A \"\" B\"", list(list("A \" B"))),
+                new Assertion("Quoted values starting with escaped quotes are unescaped", "\"\"\" B\"", list(list("\" B"))),
+                new Assertion("Quoted values ending with escaped quotes are unescaped", "\"A \"\"\"", list(list("A \""))),
+                new Assertion("A value can contain quoted text", "\"Bob \"\"The Cheese\"\" Windsor\"", list(list("Bob \"The Cheese\" Windsor"))),
+                new Assertion("A value can be just one escaped quote", "\"\"\"\"", list(list("\"")))
+                // bug: new Assertion("A value can be just two escaped quotes", "\"\"\"\"\"\"", list(list("\"\""))),
+                // bug: new Assertion("Quotes values that wrap their values in quotes are unescaped", "\"\"\"Cell\"\"\"", list(list("\"Cell\""))),
+
+                // Multi-line Escaping
+                /* all bugs:
+                new Assertion("Values with LF are unescaped", "\"A\nB\"", list(list("A\nB"))),
+                new Assertion("Values with CRLF are unescaped", "\"A\r\nB\"", list(list("A\r\nB"))),
+                new Assertion("Quoted LF can be the first field", "\"A\nB\",C", list(list("A\nB", "C"))),
+                new Assertion("Quoted LF can be the last field", "X,\"A\nB\"", list(list("X", "A\nB"))),
+                new Assertion("Quoted LF can be a middle field", "X,\"A\nB\",C", list(list("X", "A\nB", "C"))),
+                new Assertion("Quoted CRLF can be the first field", "\"A\r\nB\",C", list(list("A\r\nB", "C"))),
+                new Assertion("Quoted CRLF can be the last field", "X,\"A\r\nB\"", list(list("X", "A\r\nB"))),
+                new Assertion("Quoted CRLF can be a middle field", "X,\"A\r\nB\",C", list(list("X", "A\r\nB", "C"))),
+                new Assertion("LF can start the field", "\"\r\nB\"", list(list("\r\nB"))),
+                new Assertion("LF can end the field", "\"A\r\n\"", list(list("A\r\n"))), */
+
+        ).map(it -> DynamicTest.dynamicTest(it.displayName, () -> {
+            final List<List<String>> output;
+            try (StringReader stringReader = new StringReader(it.input); CsvReader csvReader = new CsvReader(stringReader)) {
+                output = csvReader.readFile(false);
+            }
+            Assertions.assertIterableEquals(it.expectedOutput, output);
+        }));
     }
 
     @Test
@@ -68,9 +182,7 @@ public class CsvReaderUnitTest {
         stringBuilder.append("# comment line, with \" many # odd ,\"'\"\" characters in.\n");
         stringBuilder.append("\"\"\"\"\n");
         stringBuilder.append(StringEscapeUtils.escapeCsv("bob \"wonderful\" smith")).append('\n');
-        stringBuilder.append("0,0,N,").append(
-                StringEscapeUtils.escapeCsv("\"AAAAAAAAAA\": BB BB BB 'ABCDEFG "
-                        + "QWEIR', 1234-5678")).append('\n');
+        stringBuilder.append("0,0,N,").append(StringEscapeUtils.escapeCsv("\"AAAAAAAAAA\": BB BB BB 'ABCDEFG QWEIR', 1234-5678")).append('\n');
         stringBuilder.append("333333333,xxxxx,xxxxx@yyy,AAAA,XXXXX,XXX,false,false,false,"
                 + "X,W,XXX,N,aaaaaaaaa,11-XXX-XX,11-XXX-XX,1,1,XXX,1,11/11/1111,"
                 + "11/11/1111,11/11/1111,11/11/1111,0,0,N,\"\"\"NNNNNNNNNNNN "
@@ -78,6 +190,7 @@ public class CsvReaderUnitTest {
         stringBuilder.append("\"XXX_XX\",\"Test\",\"P\",\"false\"");
         return stringBuilder;
     }
+
 
     @Test
     public void testParseLine() throws IOException, CsvException {

@@ -204,7 +204,7 @@ public class CsvReader extends BufferedReader {
         } while (true);
     }
 
-    static String stripEnclosingQuotes(@NotNull final CharSequence quotedString) {
+    private static String stripEnclosingQuotes(@NotNull final CharSequence quotedString) {
         return QUOTE_MATCHER.matcher(quotedString).replaceAll("$1");
     }
 
